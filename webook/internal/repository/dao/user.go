@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	ErrDuplicate = errors.New("账号冲突")
+	ErrDuplicate      = errors.New("账号冲突")
+	ErrRecordNotFound = gorm.ErrRecordNotFound
 )
 
 type UserDao struct {
@@ -20,12 +21,18 @@ func NewUserDao(db *gorm.DB) *UserDao {
 	return &UserDao{db: db}
 }
 
+func (dao *UserDao) FindByEmail(ctx context.Context, email string) (User, error) {
+	var u User
+	err := dao.db.WithContext(ctx).Where("email = ?", email).First(&u).Error
+	return u, err
+}
+
 func (dao *UserDao) Insert(ctx context.Context, u User) error {
 	// 存毫秒
 	now := time.Now().UnixMilli()
 	u.Ctime = now
 	u.Utime = now
-	err := dao.db.Create(&u).Error
+	err := dao.db.WithContext(ctx).Create(&u).Error
 	if mysqlErr, ok := err.(*mysql.MySQLError); ok {
 		const uniqueConflicts uint16 = 1062
 		if mysqlErr.Number == uniqueConflicts {

@@ -2,10 +2,13 @@ package web
 
 import (
 	regexp "github.com/dlclark/regexp2"
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/ink-yht/basic-go/webook/internal/domain"
 	"github.com/ink-yht/basic-go/webook/internal/service"
 	"net/http"
+	"time"
 )
 
 const (
@@ -30,7 +33,8 @@ func NewUserHandler(svc *service.UserService) *UserHandler {
 func (u *UserHandler) RegisterRouter(server *gin.Engine) {
 	ug := server.Group("/users")
 	ug.POST("/signup", u.SignUp)
-	ug.POST("/login", u.Login)
+	//ug.POST("/login", u.Login)
+	ug.POST("/login", u.LoginJWT)
 	ug.POST("/edit", u.Edit)
 	ug.POST("/profile", u.Profile)
 }
@@ -90,8 +94,79 @@ func (u *UserHandler) SignUp(ctx *gin.Context) {
 	ctx.String(http.StatusOK, "注册成功")
 }
 
-func (u *UserHandler) Login(ctx *gin.Context) {}
+func (u *UserHandler) Login(ctx *gin.Context) {
+	type LoginReq struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	var req LoginReq
+	if err := ctx.Bind(&req); err != nil {
+		return
+	}
+	user, err := u.svc.Login(ctx, req.Email, req.Password)
+	if err == service.ErrInvalidPassword {
+		ctx.String(http.StatusOK, "用户名或密码不对")
+		return
+	}
+	if err != nil {
+		ctx.String(http.StatusOK, "系统错误")
+		return
+	}
+	// 登录成功，设置 session
+	sess := sessions.Default(ctx)
+	// 设置放在 session 里的值
+	sess.Set("userId", user.Id)
+	sess.Save()
+
+	ctx.String(http.StatusOK, "登录成功")
+}
+
+func (u *UserHandler) LoginJWT(ctx *gin.Context) {
+	type LoginReq struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	var req LoginReq
+	if err := ctx.Bind(&req); err != nil {
+		return
+	}
+	user, err := u.svc.Login(ctx, req.Email, req.Password)
+	if err == service.ErrInvalidPassword {
+		ctx.String(http.StatusOK, "用户名或密码不对")
+		return
+	}
+	if err != nil {
+		ctx.String(http.StatusOK, "系统错误")
+		return
+	}
+
+	// 设置 JWT 登录态
+	claims := UserClaims{
+		Uid:       user.Id,
+		UserAgent: ctx.Request.UserAgent(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Second * 55)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenStr, err := token.SignedString(JWTKey)
+	if err != nil {
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.Header("x-jwt-token", tokenStr)
+	ctx.String(http.StatusOK, "登录成功")
+}
 
 func (u *UserHandler) Edit(ctx *gin.Context) {}
 
 func (u *UserHandler) Profile(ctx *gin.Context) {}
+
+type UserClaims struct {
+	jwt.RegisteredClaims
+	// 声明自己要放进去 token 里的数据
+	Uid       int64
+	UserAgent string
+}
+
+var JWTKey = []byte("3vnkm3RPr55524y0uuG2PeEUPAT1t3PI")
