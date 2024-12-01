@@ -7,4 +7,4 @@ docker:
 	@echo "Removing old Docker image..."
 	@docker rmi -f flycash/webook:v0.0.1 || (echo "Docker image removal failed, continuing..." && exit 0)
 	@echo "Building new Docker image..."
-	@docker build -t flycash/webook:v0.0.1 .
+	@docker build -t docker build -t flycash/webook:v0.0.1
